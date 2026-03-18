@@ -410,6 +410,7 @@ const AclEntryCard: React.FC<AclEntryCardProps> = ({
             <Box
               key={key}
               onClick={() => handlePerm(key)}
+              data-testid={`perm-cell-${entry.group.replace(/[^a-zA-Z0-9]/g, '_')}-${key}`}
               sx={{
                 display: 'flex',
                 flexDirection: 'column',
