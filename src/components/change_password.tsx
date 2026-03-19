@@ -21,9 +21,12 @@ import validation from '../utils/validation'
 import Footer from './parts/Footer'
 
 type AuthStatus = 'checking' | 'ok' | 'invalid'
+// パスワード変更モード: トークンによる再発行 or ログイン済みユーザによる変更
+type ChangeMode = 'token' | 'loggedin'
 
 export const ChangePassword = (_props: any) => {
   const [authStatus, setAuthStatus] = useState<AuthStatus>('checking')
+  const [changeMode, setChangeMode] = useState<ChangeMode>('token')
   const [passresetToken, setPassresetToken] = useState<string | undefined>(undefined)
   const [password, setPassword] = React.useState('')
   const [password_re, setPasswordRe] = React.useState('')
@@ -66,20 +69,38 @@ export const ChangePassword = (_props: any) => {
   const [active_step, setActiveStep] = useState(2)
   const handleSubmit = async (_e: any) => {
     _e.preventDefault()
-    const req = [
-      {
-        contributor: [
-          { uri: 'urn:vte.cx:auth:' + ',' + vtecxauth.getHashpass(password) },
-          { uri: 'urn:vte.cx:passreset_token:' + passresetToken }
-        ]
+
+    if (changeMode === 'token') {
+      // トークンによるパスワード再発行
+      const req = [
+        {
+          contributor: [
+            { uri: 'urn:vte.cx:auth:' + ',' + vtecxauth.getHashpass(password) },
+            { uri: 'urn:vte.cx:passreset_token:' + passresetToken }
+          ]
+        }
+      ]
+      try {
+        await fetcher('/d/?_changephash', 'put', req)
+        setIsCompleted(true)
+        setActiveStep(3)
+      } catch (error) {
+        setError('パスワード変更に失敗しました。もう一度画面をリロードして実行してください。')
       }
-    ]
-    try {
-      await fetcher('/d/?_changephash', 'put', req)
-      setIsCompleted(true)
-      setActiveStep(3)
-    } catch (error) {
-      setError('パスワード変更に失敗しました。もう一度画面をリロードして実行してください。')
+    } else {
+      // ログイン済みユーザによるパスワード変更
+      const req = [
+        {
+          contributor: [{ uri: 'urn:vte.cx:auth:' + ',' + vtecxauth.getHashpass(password) }]
+        }
+      ]
+      try {
+        await fetcher('/d/?_changephash', 'put', req)
+        setIsCompleted(true)
+        setActiveStep(3)
+      } catch (error) {
+        setError('パスワード変更に失敗しました。もう一度お試しください。')
+      }
     }
   }
 
@@ -92,30 +113,40 @@ export const ChangePassword = (_props: any) => {
     const rxid = params.get('_RXID') || ''
     const token = params.get('_passreset_token') || ''
 
-    if (!rxid || !token) {
-      setAuthStatus('invalid')
-      return
-    }
-
-    fetcher('/d/?_uid&_RXID=' + encodeURIComponent(rxid), 'get')
-      .then(() => {
-        setPassresetToken(token)
-        setAuthStatus('ok')
-      })
-      .catch((err: any) => {
-        const title = err?.response?.data?.feed?.title || ''
-        const status = err?.response?.status
-        // ワンタイムIDを既に使用済みでも token があれば続行可
-        if (
-          (status === 401 || status === 403) &&
-          title.includes('RXID has been used more than once.')
-        ) {
+    if (rxid && token) {
+      // トークンモード: _RXID と _passreset_token の両方がある場合
+      fetcher('/d/?_uid&_RXID=' + encodeURIComponent(rxid), 'get')
+        .then(() => {
           setPassresetToken(token)
+          setChangeMode('token')
           setAuthStatus('ok')
-        } else {
+        })
+        .catch((err: any) => {
+          const title = err?.response?.data?.feed?.title || ''
+          const status = err?.response?.status
+          // ワンタイムIDを既に使用済みでも token があれば続行可
+          if (
+            (status === 401 || status === 403) &&
+            title.includes('RXID has been used more than once.')
+          ) {
+            setPassresetToken(token)
+            setChangeMode('token')
+            setAuthStatus('ok')
+          } else {
+            setAuthStatus('invalid')
+          }
+        })
+    } else {
+      // ログイン済みモード: _RXID・_passreset_token がない場合はログイン状態を確認
+      fetcher('/d/?_uid', 'get')
+        .then(() => {
+          setChangeMode('loggedin')
+          setAuthStatus('ok')
+        })
+        .catch(() => {
           setAuthStatus('invalid')
-        }
-      })
+        })
+    }
   }, [])
 
   const [md] = React.useState(6)
@@ -179,30 +210,32 @@ export const ChangePassword = (_props: any) => {
       )}
       {authStatus === 'ok' && (
         <>
-          <Grid size={{ xs: 12, md: md }} textAlign={'left'} paddingTop={5}>
-            <Stepper
-              activeStep={active_step}
-              alternativeLabel
-              sx={{ width: '85%', mb: 4, mx: 'auto' }}
-            >
-              {[
-                '本人確認用メール送信',
-                'メール送信完了',
-                'パスワード変更',
-                'パスワード変更完了'
-              ].map((label: any) => (
-                <Step key={label}>
-                  <StepLabel>{label}</StepLabel>
-                </Step>
-              ))}
-            </Stepper>
-          </Grid>
+          {changeMode === 'token' && (
+            <Grid size={{ xs: 12, md: md }} textAlign={'left'} paddingTop={5}>
+              <Stepper
+                activeStep={active_step}
+                alternativeLabel
+                sx={{ width: '85%', mb: 4, mx: 'auto' }}
+              >
+                {[
+                  '本人確認用メール送信',
+                  'メール送信完了',
+                  'パスワード変更',
+                  'パスワード変更完了'
+                ].map((label: any) => (
+                  <Step key={label}>
+                    <StepLabel>{label}</StepLabel>
+                  </Step>
+                ))}
+              </Stepper>
+            </Grid>
+          )}
           {!is_completed && (
             <Grid size={{ xs: 12, md: md }} data-testid="change-password-form">
-              <Grid size={{ xs: 12, md: md }}>
+              <Grid size={12} sx={{ mb: 4 }}>
                 <Typography variant="body2">新しいパスワードを入力してください。</Typography>
               </Grid>
-              <Grid size={{ xs: 12, md: md }}>
+              <Grid size={12} sx={{ mb: 4 }}>
                 <FormControl fullWidth variant="outlined">
                   <TextField
                     type="password"
@@ -243,7 +276,7 @@ export const ChangePassword = (_props: any) => {
                   </Typography>
                 )}
               </Grid>
-              <Grid size={{ xs: 12, md: md }}>
+              <Grid size={12} sx={{ mb: 2 }}>
                 <FormControl fullWidth variant="outlined">
                   <TextField
                     type="password"
@@ -277,7 +310,7 @@ export const ChangePassword = (_props: any) => {
                   </Typography>
                 )}
               </Grid>
-              <Grid size={{ xs: 12, md: md }}>
+              <Grid size={12}>
                 <Button
                   variant="contained"
                   fullWidth
@@ -304,9 +337,16 @@ export const ChangePassword = (_props: any) => {
           )}
           <Grid size={{ xs: 12, md: md }}>
             <Typography variant="caption" component={'div'}>
-              <Link href={'login.html'} data-testid="back-to-login-link">
-                ログインに戻る
-              </Link>
+              {changeMode === 'token' && (
+                <Link href={'login.html'} data-testid="back-to-login-link">
+                  ログインに戻る
+                </Link>
+              )}
+              {changeMode === 'loggedin' && (
+                <Link href={'index.html'} data-testid="back-to-main-link">
+                  メインに戻る
+                </Link>
+              )}
             </Typography>
           </Grid>
         </>
