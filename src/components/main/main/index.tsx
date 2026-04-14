@@ -83,7 +83,7 @@ const Main = () => {
           <ListItemButton
             href="/#/billing"
             selected={!!matchPath('/billing', pathname)}
-            disabled={true}
+            //disabled={true}
           >
             <ListItemIcon>
               <AttachMoney />
