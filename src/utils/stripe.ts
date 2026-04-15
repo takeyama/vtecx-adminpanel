@@ -28,7 +28,8 @@ export async function openBillingPortal(): Promise<void> {
 export async function upgradeToProduction(serviceName: string): Promise<'upgraded'> {
   const res = await fetcher(`/d?_servicetoproduction=${encodeURIComponent(serviceName)}`, 'put')
   const redirectUrl: string | undefined = res?.data?.feed?.title
-  if (redirectUrl) {
+  // URLの場合のみリダイレクト（202の場合はメッセージが入るためURLチェックが必要）
+  if (redirectUrl && redirectUrl.startsWith('http')) {
     window.location.href = redirectUrl
   }
   return 'upgraded'

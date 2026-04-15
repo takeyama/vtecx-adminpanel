@@ -137,6 +137,19 @@ async function mockUpgradeToProImmediate(page: any) {
   })
 }
 
+async function mockUpgradeToPro202WithMessage(page: any) {
+  // 202 + feed.title に成功メッセージ（URLではない）が入るケース
+  await page.route('**/*_servicetoproduction*', (route: any) => {
+    if (route.request().method() === 'PUT')
+      route.fulfill({
+        status: 202,
+        contentType: 'application/json',
+        body: JSON.stringify({ feed: { title: "The change in service status to 'production'" } })
+      })
+    else route.continue()
+  })
+}
+
 async function mockDowngradeToStaging(page: any, cancelAt = '2026-05-31T23:59:59+09:00') {
   await page.route('**/*_servicetostaging*', (route: any) => {
     if (route.request().method() === 'PUT')
@@ -377,6 +390,19 @@ test.describe('サービス管理 - プラン変更（Free→Pro） - E2E', () =
     await mockUpgradeToProImmediate(page)
     await page.click('button:has-text("pro環境に変更する")')
     await page.click('button:has-text("クレジットカード入力画面へ")')
+    await expect(page.locator('text=pro環境に変更しました。')).toBeVisible()
+  })
+
+  // No.25b
+  test('202＋成功メッセージの場合もモーダルが閉じてメッセージ表示（ログイン画面に遷移しない）', async ({
+    page
+  }) => {
+    await mockUpgradeToPro202WithMessage(page)
+    await page.click('button:has-text("pro環境に変更する")')
+    await page.click('button:has-text("クレジットカード入力画面へ")')
+    // ログイン画面に遷移していないことを確認
+    await expect(page).not.toHaveURL(/login\.html/)
+    // 成功メッセージが表示されることを確認
     await expect(page.locator('text=pro環境に変更しました。')).toBeVisible()
   })
 })
